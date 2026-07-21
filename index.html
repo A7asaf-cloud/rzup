@@ -1,0 +1,1544 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>FinanceIL</title>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script>tailwind.config={theme:{extend:{fontFamily:{sans:['Heebo','sans-serif']}}}};</script>
+  <style>
+    *{font-family:'Heebo','Segoe UI',sans-serif;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+    body{background:#f0f4f8;margin:0;overscroll-behavior:none;}
+    @keyframes slideUp{from{transform:translateY(30px);opacity:0}to{transform:translateY(0);opacity:1}}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .slide-up{animation:slideUp .3s ease}
+    .fade-in{animation:fadeIn .25s ease}
+    .spin{animation:spin .8s linear infinite;display:inline-block}
+    .card{background:#fff;border-radius:20px;border:1px solid #e5e7eb;}
+    .btn-primary{background:#22C55E;color:#fff;border:none;border-radius:14px;padding:14px 24px;
+                 font-size:16px;font-weight:700;cursor:pointer;width:100%;transition:background .15s;}
+    .btn-primary:active{background:#16a34a;}
+    .btn-secondary{background:#f3f4f6;color:#374151;border:none;border-radius:14px;padding:14px 24px;
+                   font-size:15px;font-weight:600;cursor:pointer;transition:background .15s;}
+    .btn-secondary:active{background:#e5e7eb;}
+    .input{width:100%;border:1.5px solid #e5e7eb;border-radius:12px;padding:13px 16px;
+           font-size:16px;outline:none;transition:border-color .15s;background:#fff;}
+    .input:focus{border-color:#22C55E;}
+    .input-num{direction:ltr;text-align:right;}
+    .tag-g{background:#dcfce7;color:#16a34a;border-radius:8px;padding:2px 8px;font-size:11px;font-weight:700}
+    .tag-r{background:#fee2e2;color:#dc2626;border-radius:8px;padding:2px 8px;font-size:11px;font-weight:700}
+    .scrollbar-hide::-webkit-scrollbar{display:none}
+    .scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none}
+    /* bottom nav safe area */
+    .main-content{padding-bottom:calc(72px + env(safe-area-inset-bottom));}
+    .bottom-nav{padding-bottom:env(safe-area-inset-bottom);}
+  </style>
+</head>
+<body>
+<div id="root" style="min-height:100vh"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+/* ── LS ── */
+const LS = {
+  DONE:'fil_done', PROFILE:'fil_profile', TX:'fil_tx',
+  RECURRING:'fil_rec', INV:'fil_inv', FINNHUB:'fil_fh',
+};
+const lsGet = (k,fb) => { try{ const v=localStorage.getItem(k); return v!==null?JSON.parse(v):fb; }catch{ return fb; } };
+const lsSet = (k,v) => { try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} };
+const lsClear = () => Object.values(LS).forEach(k=>localStorage.removeItem(k));
+
+/* ── CATEGORIES ── */
+const CAT_RULES = [
+  {kw:['שופרסל','רמי לוי','ויקטורי','מגה','יינות ביתן','אושר עד','rami levy','mega'],     cat:'סופרמרקט',      color:'#22C55E',emoji:'🛒'},
+  {kw:['וולט','wolt','מקדונלד','mcdonald','קפה','cafe','coffee','מסעדה','פיצה','pizza','סושי','בורגר'],  cat:'מסעדות וקפה',  color:'#F97316',emoji:'🍽️'},
+  {kw:['ארנונה','עיריית','municipality'],                                                  cat:'ארנונה',         color:'#8B5CF6',emoji:'🏛️'},
+  {kw:['hot','הוט','netflix','נטפליקס','spotify','ספוטיפיי','yes','יס','disney','apple tv'], cat:'בידור',         color:'#EC4899',emoji:'🎬'},
+  {kw:['partner','פרטנר','cellcom','סלקום','פלאפון','pelephone','bezeq','בזק'],            cat:'תקשורת',         color:'#06B6D4',emoji:'📱'},
+  {kw:['paz','פז','sonol','סונול','דלק','fuel'],                                           cat:'דלק ורכב',       color:'#84CC16',emoji:'⛽'},
+  {kw:['אגד','דן','רב-קו','rav-kav','רכבת','גט','taxi','חניה','parking'],                  cat:'תחבורה',         color:'#3B82F6',emoji:'🚌'},
+  {kw:['חברת החשמל','iec','מים','ועד בית'],                                               cat:'חשבונות בית',    color:'#EAB308',emoji:'💡'},
+  {kw:['ביטוח','הראל','מנורה','כלל','מגדל','איילון'],                                     cat:'ביטוח',          color:'#6366F1',emoji:'🛡️'},
+  {kw:['מכבי','כללית','לאומית','סופר-פארם','super pharm','תרופות'],                        cat:'בריאות',         color:'#14B8A6',emoji:'🏥'},
+  {kw:['amazon','אמזון','aliexpress','ebay','זארה','zara','h&m','קסטרו','קניון'],          cat:'קניות',          color:'#F59E0B',emoji:'🛍️'},
+  {kw:['משכורת','שכר','הכנסה','income','salary','bonus','בונוס'],                         cat:'הכנסה',          color:'#10B981',emoji:'💰'},
+  {kw:['שכר דירה','שכירות','mortgage','משכנתה'],                                          cat:'דיור',           color:'#64748B',emoji:'🏠'},
+];
+const DEF_CAT = {cat:'אחר',color:'#9CA3AF',emoji:'📦'};
+
+function categorize(desc) {
+  if (!desc||typeof desc!=='string') return {...DEF_CAT};
+  const low = desc.toLowerCase().trim();
+  for (const r of CAT_RULES)
+    for (const kw of r.kw)
+      if (low.includes(kw.toLowerCase()))
+        return {cat:r.cat,color:r.color,emoji:r.emoji};
+  return {...DEF_CAT};
+}
+
+/* ── BUDGET CALC ── */
+const BUDGET_PLAN = [
+  {key:'דיור',       pct:30, color:'#64748B', emoji:'🏠'},
+  {key:'מזון ושוק',  pct:15, color:'#22C55E', emoji:'🛒'},
+  {key:'תחבורה',     pct:10, color:'#3B82F6', emoji:'🚌'},
+  {key:'חשבונות',    pct:8,  color:'#EAB308', emoji:'💡'},
+  {key:'בריאות',     pct:5,  color:'#14B8A6', emoji:'🏥'},
+  {key:'בידור',      pct:7,  color:'#EC4899', emoji:'🎬'},
+  {key:'חיסכון',     pct:15, color:'#F59E0B', emoji:'💰'},
+  {key:'שונות',      pct:10, color:'#9CA3AF', emoji:'📦'},
+];
+const CAT_TO_BUDGET = {
+  'סופרמרקט':'מזון ושוק','מסעדות וקפה':'בידור','ארנונה':'חשבונות',
+  'בידור':'בידור','תקשורת':'חשבונות','דלק ורכב':'תחבורה','תחבורה':'תחבורה',
+  'חשבונות בית':'חשבונות','ביטוח':'חשבונות','בריאות':'בריאות','קניות':'שונות',
+  'דיור':'דיור','אחר':'שונות',
+};
+function calcBudget(netSalary) {
+  return BUDGET_PLAN.map(b => ({...b, amount: Math.round(netSalary * b.pct / 100)}));
+}
+function spentPerBudget(txs, budget) {
+  const map = {};
+  budget.forEach(b => { map[b.key] = 0; });
+  const now = new Date();
+  txs.filter(t => t.amount < 0).forEach(t => {
+    const d = new Date(t.date);
+    if (d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()) {
+      const bk = CAT_TO_BUDGET[t.cat] || 'שונות';
+      if (map[bk] !== undefined) map[bk] += Math.abs(t.amount);
+    }
+  });
+  return map;
+}
+
+/* ── FORMATTERS ── */
+const fmtILS = n => {
+  if (typeof n!=='number'||isNaN(n)) return '₪0';
+  return new Intl.NumberFormat('he-IL',{style:'currency',currency:'ILS',minimumFractionDigits:0,maximumFractionDigits:0}).format(Math.round(n));
+};
+const fmtDate = s => {
+  const d=new Date(s); if(isNaN(d)) return s;
+  return new Intl.DateTimeFormat('he-IL',{day:'numeric',month:'short'}).format(d);
+};
+
+/* ── SVG DONUT ── */
+function DonutChart({data,size=180,cx_label='',cx_val=''}) {
+  const [hov,setHov]=useState(null);
+  if(!data||!data.length) return null;
+  const total=data.reduce((s,d)=>s+d.value,0);
+  if(!total) return null;
+  const CX=90,CY=90,R=72,ri=44; let angle=-Math.PI/2;
+  const slices=data.map((d,i)=>{
+    const pct=d.value/total,a0=angle,a1=angle+pct*2*Math.PI; angle=a1;
+    const lg=pct>.5?1:0,c0=Math.cos(a0),s0=Math.sin(a0),c1=Math.cos(a1),s1=Math.sin(a1);
+    const path=[`M ${CX+R*c0} ${CY+R*s0}`,`A ${R} ${R} 0 ${lg} 1 ${CX+R*c1} ${CY+R*s1}`,
+      `L ${CX+ri*c1} ${CY+ri*s1}`,`A ${ri} ${ri} 0 ${lg} 0 ${CX+ri*c0} ${CY+ri*s0}`,'Z'].join(' ');
+    const mid=(a0+a1)/2,lR=(R+ri)/2;
+    return{...d,path,pct,lx:CX+lR*Math.cos(mid),ly:CY+lR*Math.sin(mid)};
+  });
+  return (
+    <svg viewBox="0 0 180 180" style={{width:'100%',maxWidth:size,display:'block',margin:'0 auto'}}
+         onMouseLeave={()=>setHov(null)}>
+      {slices.map((s,i)=>(
+        <g key={i} onMouseEnter={()=>setHov(i)} onTouchStart={()=>setHov(i===hov?null:i)}>
+          <path d={s.path} fill={s.color} opacity={hov===null||hov===i?1:.45}
+                style={{transition:'opacity .15s',cursor:'pointer'}}/>
+          {s.pct>=.08&&<text x={s.lx} y={s.ly} textAnchor="middle" dominantBaseline="central"
+            fill="white" fontSize="10" fontWeight="700" style={{pointerEvents:'none'}}>
+            {(s.pct*100).toFixed(0)}%</text>}
+        </g>
+      ))}
+      {hov!==null&&slices[hov]
+        ?<>
+          <text x={CX} y={CY-8} textAnchor="middle" fontSize="10" fill="#6B7280">{slices[hov].name}</text>
+          <text x={CX} y={CY+10} textAnchor="middle" fontSize="13" fontWeight="800" fill="#111">{fmtILS(slices[hov].value)}</text>
+        </>
+        :<>
+          <text x={CX} y={CY-8} textAnchor="middle" fontSize="10" fill="#9CA3AF">{cx_label||'סה"כ'}</text>
+          <text x={CX} y={CY+10} textAnchor="middle" fontSize="13" fontWeight="800" fill="#111">{cx_val||fmtILS(total)}</text>
+        </>
+      }
+    </svg>
+  );
+}
+
+/* ── ONBOARDING ── */
+function Onboarding({onDone}) {
+  const [step,setStep]=useState(1);
+  const STEPS=6;
+  const [d,setD]=useState({
+    name:'', netSalary:'', grossSalary:'',
+    hasKeren:true, kerenEmp:2.5, kerenEr:7.5,
+    hasPension:true, pensionEmp:6, pensionEr:14.83, pensionProvider:'',
+    bankBalance:'', creditDebt:'',
+    rent:'', rentDay:1, otherFixed:[],
+  });
+  const set=(k,v)=>setD(p=>({...p,[k]:v}));
+
+  function finish() {
+    const profile={
+      ...d,
+      netSalary:  parseFloat(d.netSalary)||0,
+      grossSalary:parseFloat(d.grossSalary)||0,
+      bankBalance:parseFloat(d.bankBalance)||0,
+      creditDebt: parseFloat(d.creditDebt)||0,
+      rent:       parseFloat(d.rent)||0,
+      createdAt:  new Date().toISOString(),
+    };
+    lsSet(LS.PROFILE, profile);
+    lsSet(LS.DONE, true);
+    // seed recurring from rent
+    if (profile.rent>0) {
+      lsSet(LS.RECURRING,[{id:1,name:'שכר דירה',amount:profile.rent,dueDay:profile.rentDay,emoji:'🏠'}]);
+    }
+    onDone(profile);
+  }
+
+  const next = () => step<STEPS ? setStep(s=>s+1) : finish();
+  const back = () => setStep(s=>s-1);
+  const canNext = [
+    ()=>d.name.trim().length>0,
+    ()=>parseFloat(d.netSalary)>0,
+    ()=>true,
+    ()=>true,
+    ()=>true,
+    ()=>true,
+  ][step-1];
+
+  const pct = (step/STEPS)*100;
+
+  return (
+    <div style={{minHeight:'100vh',background:'linear-gradient(160deg,#0f172a 0%,#1e3a5f 100%)',
+                 display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'24px 20px'}}>
+      <div style={{width:'100%',maxWidth:440}}>
+        {/* Logo */}
+        <div style={{textAlign:'center',marginBottom:32}}>
+          <div style={{fontSize:42,marginBottom:8}}>💎</div>
+          <p style={{color:'white',fontSize:22,fontWeight:800,margin:0}}>FinanceIL</p>
+          <p style={{color:'rgba(255,255,255,.5)',fontSize:13,margin:'4px 0 0'}}>הגדרה ראשונית</p>
+        </div>
+
+        {/* Progress */}
+        <div style={{marginBottom:24}}>
+          <div style={{height:4,background:'rgba(255,255,255,.15)',borderRadius:4}}>
+            <div style={{height:'100%',width:`${pct}%`,background:'#22C55E',borderRadius:4,transition:'width .4s'}}/>
+          </div>
+          <p style={{color:'rgba(255,255,255,.5)',fontSize:12,textAlign:'center',marginTop:8}}>שלב {step} מתוך {STEPS}</p>
+        </div>
+
+        {/* Card */}
+        <div className="card slide-up" style={{padding:28,background:'white'}}>
+
+          {step===1 && (
+            <div>
+              <p style={{fontSize:22,fontWeight:800,color:'#111',marginBottom:6}}>👋 היי! מה שמך?</p>
+              <p style={{fontSize:14,color:'#6B7280',marginBottom:24}}>נתחיל בהיכרות קצרה</p>
+              <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>שם פרטי</label>
+              <input className="input" placeholder="ישראל ישראלי" value={d.name}
+                     onChange={e=>set('name',e.target.value)}
+                     onKeyDown={e=>e.key==='Enter'&&canNext()&&next()} autoFocus/>
+            </div>
+          )}
+
+          {step===2 && (
+            <div>
+              <p style={{fontSize:22,fontWeight:800,color:'#111',marginBottom:6}}>💰 כמה אתה מרוויח?</p>
+              <p style={{fontSize:14,color:'#6B7280',marginBottom:24}}>נשתמש בזה לחישוב תקציב חכם</p>
+              <div style={{marginBottom:16}}>
+                <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>שכר נטו (לאחר ניכויים) ₪</label>
+                <input className="input input-num" type="number" placeholder="14000" value={d.netSalary}
+                       onChange={e=>set('netSalary',e.target.value)}/>
+                <p style={{fontSize:11,color:'#9CA3AF',marginTop:4}}>הסכום שנכנס לחשבון הבנק בפועל</p>
+              </div>
+              <div>
+                <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>שכר ברוטו ₪ <span style={{color:'#9CA3AF',fontWeight:400}}>(אופציונלי)</span></label>
+                <input className="input input-num" type="number" placeholder="18000" value={d.grossSalary}
+                       onChange={e=>set('grossSalary',e.target.value)}/>
+              </div>
+            </div>
+          )}
+
+          {step===3 && (
+            <div>
+              <p style={{fontSize:22,fontWeight:800,color:'#111',marginBottom:6}}>📋 הפרשות שכר</p>
+              <p style={{fontSize:14,color:'#6B7280',marginBottom:20}}>אלו ייקחו בחשבון בחישוב תיק ההשקעות</p>
+
+              {/* Keren */}
+              <div style={{background:'#eff6ff',borderRadius:14,padding:16,marginBottom:16}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                  <span style={{fontWeight:700,fontSize:15}}>📈 קרן השתלמות</span>
+                  <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+                    <input type="checkbox" checked={d.hasKeren} onChange={e=>set('hasKeren',e.target.checked)}
+                           style={{width:18,height:18,accentColor:'#22C55E'}}/>
+                    <span style={{fontSize:13}}>יש לי</span>
+                  </label>
+                </div>
+                {d.hasKeren&&(
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                    <div>
+                      <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>עובד %</label>
+                      <input className="input input-num" type="number" step="0.5" value={d.kerenEmp}
+                             onChange={e=>set('kerenEmp',parseFloat(e.target.value)||2.5)}
+                             style={{padding:'10px 12px',fontSize:14}}/>
+                    </div>
+                    <div>
+                      <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>מעסיק %</label>
+                      <input className="input input-num" type="number" step="0.5" value={d.kerenEr}
+                             onChange={e=>set('kerenEr',parseFloat(e.target.value)||7.5)}
+                             style={{padding:'10px 12px',fontSize:14}}/>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Pension */}
+              <div style={{background:'#f5f3ff',borderRadius:14,padding:16}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                  <span style={{fontWeight:700,fontSize:15}}>🏛️ פנסיה</span>
+                  <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+                    <input type="checkbox" checked={d.hasPension} onChange={e=>set('hasPension',e.target.checked)}
+                           style={{width:18,height:18,accentColor:'#8B5CF6'}}/>
+                    <span style={{fontSize:13}}>יש לי</span>
+                  </label>
+                </div>
+                {d.hasPension&&(
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                    <div>
+                      <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>עובד %</label>
+                      <input className="input input-num" type="number" step="0.5" value={d.pensionEmp}
+                             onChange={e=>set('pensionEmp',parseFloat(e.target.value)||6)}
+                             style={{padding:'10px 12px',fontSize:14}}/>
+                    </div>
+                    <div>
+                      <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>מעסיק %</label>
+                      <input className="input input-num" type="number" step="0.5" value={d.pensionEr}
+                             onChange={e=>set('pensionEr',parseFloat(e.target.value)||14.83)}
+                             style={{padding:'10px 12px',fontSize:14}}/>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {step===4 && (
+            <div>
+              <p style={{fontSize:22,fontWeight:800,color:'#111',marginBottom:6}}>🏦 מצב כספי נוכחי</p>
+              <p style={{fontSize:14,color:'#6B7280',marginBottom:24}}>נתחיל לחשב את שווי הנכסים שלך</p>
+              <div style={{marginBottom:16}}>
+                <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>יתרה בבנק (עו"ש) ₪</label>
+                <input className="input input-num" type="number" placeholder="0" value={d.bankBalance}
+                       onChange={e=>set('bankBalance',e.target.value)}/>
+              </div>
+              <div>
+                <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>חוב כרטיס אשראי ₪ <span style={{color:'#9CA3AF',fontWeight:400}}>(אם יש)</span></label>
+                <input className="input input-num" type="number" placeholder="0" value={d.creditDebt}
+                       onChange={e=>set('creditDebt',e.target.value)}/>
+              </div>
+            </div>
+          )}
+
+          {step===5 && (
+            <div>
+              <p style={{fontSize:22,fontWeight:800,color:'#111',marginBottom:6}}>🏠 הוצאות קבועות</p>
+              <p style={{fontSize:14,color:'#6B7280',marginBottom:24}}>נחשב מה יישאר לך מהמשכורת</p>
+              <div style={{marginBottom:16}}>
+                <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>שכר דירה / משכנתה ₪ לחודש</label>
+                <input className="input input-num" type="number" placeholder="0" value={d.rent}
+                       onChange={e=>set('rent',e.target.value)}/>
+              </div>
+              <div>
+                <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>יום הוראת קבע</label>
+                <input className="input input-num" type="number" min="1" max="31" placeholder="1" value={d.rentDay}
+                       onChange={e=>set('rentDay',parseInt(e.target.value)||1)}
+                       style={{maxWidth:100}}/>
+              </div>
+              <p style={{fontSize:12,color:'#9CA3AF',marginTop:16}}>💡 ניתן להוסיף עוד הוצאות קבועות אחרי ההגדרה</p>
+            </div>
+          )}
+
+          {step===6 && (
+            <div>
+              <p style={{fontSize:22,fontWeight:800,color:'#111',marginBottom:6}}>✅ הכל מוכן, {d.name}!</p>
+              <p style={{fontSize:14,color:'#6B7280',marginBottom:20}}>הנה ההקצאה החודשית המומלצת עבורך:</p>
+              {parseFloat(d.netSalary)>0 ? (
+                <div>
+                  <div style={{background:'linear-gradient(135deg,#f0fdf4,#dcfce7)',borderRadius:14,padding:16,marginBottom:16}}>
+                    <p style={{fontSize:13,color:'#15803d',marginBottom:4}}>שכר נטו חודשי</p>
+                    <p style={{fontSize:28,fontWeight:800,color:'#14532d'}}>{fmtILS(parseFloat(d.netSalary))}</p>
+                  </div>
+                  {calcBudget(parseFloat(d.netSalary)).map(b=>(
+                    <div key={b.key} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+                      padding:'10px 0',borderBottom:'1px solid #f3f4f6'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:10}}>
+                        <span style={{width:10,height:10,borderRadius:'50%',background:b.color,flexShrink:0,display:'inline-block'}}/>
+                        <span style={{fontSize:14,color:'#374151'}}>{b.emoji} {b.key}</span>
+                      </div>
+                      <div style={{textAlign:'left'}}>
+                        <span style={{fontSize:14,fontWeight:700,color:'#111'}}>{fmtILS(b.amount)}</span>
+                        <span style={{fontSize:11,color:'#9CA3AF',marginRight:6}}>({b.pct}%)</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{color:'#9CA3AF',fontSize:14}}>לא הוזן שכר — ניתן להגדיר בהגדרות</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Nav buttons */}
+        <div style={{display:'flex',gap:12,marginTop:20}}>
+          {step>1&&(
+            <button className="btn-secondary" onClick={back} style={{width:'auto',padding:'14px 24px'}}>
+              ← חזור
+            </button>
+          )}
+          <button className="btn-primary"
+                  onClick={next}
+                  disabled={!canNext()}
+                  style={{opacity:canNext()?1:.5}}>
+            {step===STEPS ? `🚀 בואו נתחיל!` : 'הבא →'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── TRANSACTION ROW ── */
+function TxRow({tx,isNew}) {
+  const pos=tx.amount>=0;
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',
+                 borderBottom:'1px solid #f3f4f6',background:isNew?'#f0fdf4':'white',
+                 transition:'background 2s'}}>
+      <div style={{width:42,height:42,borderRadius:'50%',background:tx.color+'22',
+                   display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>
+        {tx.emoji}
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        <p style={{fontSize:14,fontWeight:600,color:'#111',margin:0,
+                   overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{tx.description}</p>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginTop:3}}>
+          <span style={{fontSize:11,color:'#9CA3AF'}}>{fmtDate(tx.date)}</span>
+          <span style={{background:tx.color+'22',color:tx.color,borderRadius:6,
+                        padding:'1px 7px',fontSize:11,fontWeight:700}}>{tx.cat}</span>
+        </div>
+      </div>
+      <span style={{fontSize:15,fontWeight:700,color:pos?'#16a34a':'#dc2626',flexShrink:0}}>
+        {pos?'+':''}{fmtILS(tx.amount)}
+      </span>
+    </div>
+  );
+}
+
+/* ── ADD TRANSACTION MODAL ── */
+function AddModal({onClose,onAdd}) {
+  const [desc,setDesc]=useState('');
+  const [amount,setAmount]=useState('');
+  const [type,setType]=useState('expense');
+  const [date,setDate]=useState(new Date().toISOString().split('T')[0]);
+  const preview=desc.length>2?categorize(desc):null;
+
+  function submit(e){
+    e.preventDefault();
+    const raw=parseFloat(amount);
+    if(isNaN(raw)||raw<=0) return;
+    const finalAmt=type==='expense'?-(Math.round(raw*100)/100):Math.round(raw*100)/100;
+    const cat=categorize(desc);
+    onAdd({id:Date.now(),description:desc,amount:finalAmt,date,
+           cat:cat.cat,color:cat.color,emoji:cat.emoji,account:'ידני'});
+    onClose();
+  }
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:100,
+                 display:'flex',alignItems:'flex-end',justifyContent:'center'}}
+         onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:'white',borderRadius:'24px 24px 0 0',width:'100%',maxWidth:500,
+                   maxHeight:'90vh',overflowY:'auto'}} className="slide-up">
+        <div style={{width:40,height:4,background:'#e5e7eb',borderRadius:2,margin:'12px auto'}}/>
+        <div style={{padding:'0 20px 20px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+            <p style={{fontSize:18,fontWeight:800,margin:0}}>הוסף עסקה</p>
+            <button onClick={onClose} style={{border:'none',background:'#f3f4f6',borderRadius:'50%',
+              width:32,height:32,cursor:'pointer',fontSize:16}}>✕</button>
+          </div>
+
+          {/* Type toggle */}
+          <div style={{display:'flex',background:'#f3f4f6',borderRadius:12,padding:4,gap:4,marginBottom:20}}>
+            {[['expense','הוצאה 💸'],['income','הכנסה 💰']].map(([v,l])=>(
+              <button key={v} onClick={()=>setType(v)} style={{
+                flex:1,padding:'10px',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:'pointer',
+                background:type===v?'white':'transparent',
+                color:type===v?(v==='expense'?'#dc2626':'#16a34a'):'#9CA3AF',
+                boxShadow:type===v?'0 1px 4px rgba(0,0,0,.1)':'none'}}>
+                {l}
+              </button>
+            ))}
+          </div>
+
+          <form onSubmit={submit} style={{display:'flex',flexDirection:'column',gap:16}}>
+            <div>
+              <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>תיאור</label>
+              <input className="input" placeholder="שופרסל, וולט, ארנונה..." value={desc}
+                     onChange={e=>setDesc(e.target.value)} required/>
+              {preview&&<p style={{fontSize:12,color:preview.color,marginTop:4,fontWeight:600}}>
+                {preview.emoji} {preview.cat}
+              </p>}
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>סכום ₪</label>
+              <input className="input input-num" type="number" min="0.01" step="0.01"
+                     placeholder="0.00" value={amount} onChange={e=>setAmount(e.target.value)} required/>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>תאריך</label>
+              <input className="input" type="date" value={date} onChange={e=>setDate(e.target.value)}
+                     style={{direction:'ltr'}}/>
+            </div>
+            <button type="submit" className="btn-primary">הוסף ✓</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── DASHBOARD ── */
+function Dashboard({profile,txs,onAdd}) {
+  const [showAdd,setShowAdd]=useState(false);
+  const net=profile.netSalary||0;
+  const budget=useMemo(()=>calcBudget(net),[net]);
+  const spent=useMemo(()=>spentPerBudget(txs,budget),[txs,budget]);
+
+  // Monthly totals
+  const now=new Date();
+  const thisMonth=txs.filter(t=>{const d=new Date(t.date);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();});
+  const monthIncome=thisMonth.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
+  const monthSpent =Math.abs(thisMonth.filter(t=>t.amount<0).reduce((s,t)=>s+t.amount,0));
+  const safeToSpend=Math.max(0,net-monthSpent);
+  const spendColor=safeToSpend>net*.5?'#22C55E':safeToSpend>net*.2?'#F59E0B':'#EF4444';
+
+  const recent=[...txs].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5);
+
+  // Donut for budget
+  const donutData=budget.map(b=>({name:b.key,value:b.amount,color:b.color,emoji:b.emoji}));
+
+  return (
+    <div>
+      {/* Hero */}
+      <div style={{background:`linear-gradient(135deg,${spendColor},${spendColor}cc)`,
+                   padding:'28px 20px 32px',color:'white'}}>
+        <p style={{opacity:.8,fontSize:13,margin:'0 0 4px'}}>שלום {profile.name} 👋 · בטוח להוציא היום</p>
+        <p style={{fontSize:46,fontWeight:800,margin:'0 0 12px',lineHeight:1}}>{fmtILS(safeToSpend)}</p>
+        <div style={{display:'flex',gap:20,fontSize:13,opacity:.85}}>
+          <span>📥 הכנסה: {fmtILS(monthIncome||net)}</span>
+          <span>📤 הוצאות: {fmtILS(monthSpent)}</span>
+        </div>
+      </div>
+
+      <div style={{padding:'16px 16px 0',display:'flex',flexDirection:'column',gap:16}}>
+
+        {/* Budget overview */}
+        {net>0&&(
+          <div className="card" style={{padding:'16px'}}>
+            <p style={{fontSize:15,fontWeight:700,margin:'0 0 12px'}}>תקציב חודשי</p>
+            {budget.map(b=>{
+              const s=spent[b.key]||0;
+              const pct=Math.min(100,(s/b.amount)*100);
+              const over=s>b.amount;
+              return (
+                <div key={b.key} style={{marginBottom:12}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                    <span style={{fontSize:13,color:'#374151'}}>{b.emoji} {b.key}</span>
+                    <span style={{fontSize:12,color:over?'#dc2626':'#6B7280'}}>
+                      {fmtILS(s)} / {fmtILS(b.amount)}
+                      {over&&<span className="tag-r" style={{marginRight:6}}>חריגה!</span>}
+                    </span>
+                  </div>
+                  <div style={{height:6,background:'#f3f4f6',borderRadius:3}}>
+                    <div style={{height:'100%',width:`${pct}%`,background:over?'#ef4444':b.color,borderRadius:3,transition:'width .5s'}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Recent transactions */}
+        <div className="card" style={{overflow:'hidden'}}>
+          <div style={{padding:'14px 16px 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <p style={{fontSize:15,fontWeight:700,margin:0}}>עסקאות אחרונות</p>
+          </div>
+          {recent.length===0
+            ? <p style={{textAlign:'center',color:'#9CA3AF',padding:'24px',fontSize:14}}>אין עסקאות עדיין — ייבא קובץ אקסל או הוסף ידנית</p>
+            : recent.map(tx=><TxRow key={tx.id} tx={tx}/>)
+          }
+        </div>
+      </div>
+
+      {/* FAB */}
+      <button onClick={()=>setShowAdd(true)} style={{
+        position:'fixed',bottom:84,left:20,width:56,height:56,borderRadius:'50%',
+        background:'#22C55E',color:'white',fontSize:28,border:'none',cursor:'pointer',
+        boxShadow:'0 4px 20px rgba(34,197,94,.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:40}}>
+        +
+      </button>
+
+      {showAdd&&<AddModal onClose={()=>setShowAdd(false)} onAdd={tx=>{onAdd(tx);setShowAdd(false);}}/>}
+    </div>
+  );
+}
+
+/* ── TRANSACTIONS TAB ── */
+function TransactionsTab({txs,onAdd,onDelete}) {
+  const [showAdd,setShowAdd]=useState(false);
+  const [search,setSearch]=useState('');
+  const [filter,setFilter]=useState('all');
+
+  const filtered=useMemo(()=>{
+    let list=[...txs].sort((a,b)=>new Date(b.date)-new Date(a.date));
+    if(search) list=list.filter(t=>t.description.toLowerCase().includes(search.toLowerCase())||t.cat.includes(search));
+    if(filter==='income')  list=list.filter(t=>t.amount>0);
+    if(filter==='expense') list=list.filter(t=>t.amount<0);
+    return list;
+  },[txs,search,filter]);
+
+  return (
+    <div>
+      {/* Search */}
+      <div style={{padding:'12px 16px',background:'white',borderBottom:'1px solid #f3f4f6'}}>
+        <input className="input" placeholder="🔍 חיפוש..." value={search}
+               onChange={e=>setSearch(e.target.value)}
+               style={{marginBottom:10}}/>
+        <div style={{display:'flex',gap:8}}>
+          {[['all','הכל'],['income','הכנסות'],['expense','הוצאות']].map(([v,l])=>(
+            <button key={v} onClick={()=>setFilter(v)} style={{
+              padding:'6px 14px',border:'none',borderRadius:20,fontSize:13,fontWeight:600,cursor:'pointer',
+              background:filter===v?'#22C55E':'#f3f4f6',color:filter===v?'white':'#6B7280'}}>
+              {l}
+            </button>
+          ))}
+          <span style={{marginRight:'auto',fontSize:12,color:'#9CA3AF',lineHeight:'30px'}}>{filtered.length} עסקאות</span>
+        </div>
+      </div>
+
+      <div className="card" style={{borderRadius:0,border:'none',borderTop:'1px solid #e5e7eb'}}>
+        {filtered.length===0
+          ? <p style={{textAlign:'center',color:'#9CA3AF',padding:'40px',fontSize:14}}>אין עסקאות</p>
+          : filtered.map(tx=><TxRow key={tx.id} tx={tx}/>)
+        }
+      </div>
+
+      <button onClick={()=>setShowAdd(true)} style={{
+        position:'fixed',bottom:84,left:20,width:56,height:56,borderRadius:'50%',
+        background:'#22C55E',color:'white',fontSize:28,border:'none',cursor:'pointer',
+        boxShadow:'0 4px 20px rgba(34,197,94,.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:40}}>
+        +
+      </button>
+      {showAdd&&<AddModal onClose={()=>setShowAdd(false)} onAdd={tx=>{onAdd(tx);setShowAdd(false);}}/>}
+    </div>
+  );
+}
+
+/* ── EXCEL IMPORT ── */
+function ImportTab({onImport}) {
+  const [stage,setStage]=useState('upload'); // upload | map | preview | done
+  const [rows,setRows]=useState([]);
+  const [cols,setCols]=useState({date:-1,desc:-1,debit:-1,credit:-1,amount:-1});
+  const [preview,setPreview]=useState([]);
+  const [importing,setImporting]=useState(false);
+  const [err,setErr]=useState(null);
+  const fileRef=useRef();
+
+  async function handleFile(file) {
+    setErr(null);
+    try {
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array',cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      const clean=data.filter(r=>r.some(c=>String(c).trim()!==''));
+      setRows(clean);
+      // auto-detect columns
+      const hdr=clean[0].map(c=>String(c).toLowerCase().trim());
+      const find=(...terms)=>hdr.findIndex(h=>terms.some(t=>h.includes(t)));
+      setCols({
+        date:   find('תאריך','date'),
+        desc:   find('תיאור','פירוט','שם','description'),
+        debit:  find('חיוב','הוצאה','debit'),
+        credit: find('זכות','הכנסה','credit'),
+        amount: find('סכום','amount'),
+      });
+      setStage('map');
+    } catch(e) { setErr('שגיאה בקריאת הקובץ: '+e.message); }
+  }
+
+  function buildPreview() {
+    const parsed=[];
+    for(let i=1;i<rows.length;i++){
+      const row=rows[i];
+      let amount=0;
+      if(cols.amount>=0) {
+        amount=parseFloat(String(row[cols.amount]).replace(/[^\d.-]/g,''))||0;
+      } else {
+        const cr=parseFloat(String(row[cols.credit]||'').replace(/[^\d.-]/g,''))||0;
+        const db=parseFloat(String(row[cols.debit]||'').replace(/[^\d.-]/g,''))||0;
+        amount=cr>0?cr:(db>0?-db:0);
+      }
+      const rawDate=row[cols.date];
+      let date;
+      if(rawDate instanceof Date) date=rawDate.toISOString().split('T')[0];
+      else {
+        const d=new Date(rawDate);
+        date=isNaN(d)?new Date().toISOString().split('T')[0]:d.toISOString().split('T')[0];
+      }
+      const desc=String(row[cols.desc]||'').trim();
+      if(!desc||amount===0) continue;
+      const cat=categorize(desc);
+      parsed.push({id:Date.now()+i,description:desc,amount:Math.round(amount*100)/100,
+                   date,cat:cat.cat,color:cat.color,emoji:cat.emoji,account:'ייבוא'});
+    }
+    setPreview(parsed);
+    setStage('preview');
+  }
+
+  function confirmImport(){
+    onImport(preview);
+    setStage('done');
+  }
+
+  const hdrRow=rows[0]||[];
+
+  return (
+    <div style={{padding:16,display:'flex',flexDirection:'column',gap:16}}>
+
+      {stage==='upload'&&(
+        <div>
+          <div className="card" style={{padding:32,textAlign:'center'}}>
+            <div style={{fontSize:48,marginBottom:12}}>📥</div>
+            <p style={{fontSize:18,fontWeight:700,marginBottom:8}}>ייבא קובץ עסקאות</p>
+            <p style={{fontSize:13,color:'#6B7280',marginBottom:24,lineHeight:1.6}}>
+              מבנק הפועלים, לאומי, דיסקונט, Max ועוד.<br/>
+              Excel (xlsx/xls) או CSV
+            </p>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv"
+                   style={{display:'none'}} onChange={e=>e.target.files[0]&&handleFile(e.target.files[0])}/>
+            <button className="btn-primary" onClick={()=>fileRef.current.click()}>
+              📂 בחר קובץ
+            </button>
+            {/* Drag area */}
+            <div onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor='#22C55E';}}
+                 onDragLeave={e=>{e.currentTarget.style.borderColor='#e5e7eb';}}
+                 onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor='#e5e7eb';
+                             e.dataTransfer.files[0]&&handleFile(e.dataTransfer.files[0]);}}
+                 style={{border:'2px dashed #e5e7eb',borderRadius:14,padding:24,marginTop:16,
+                         color:'#9CA3AF',fontSize:13,transition:'border-color .2s'}}>
+              או גרור קובץ לכאן
+            </div>
+          </div>
+          {err&&<p style={{color:'#dc2626',fontSize:13,textAlign:'center'}}>{err}</p>}
+
+          <div className="card" style={{padding:16}}>
+            <p style={{fontSize:13,fontWeight:700,marginBottom:8}}>📋 איך להוריד קובץ מהבנק?</p>
+            {[
+              {bank:'בנק הפועלים',steps:'כניסה ← תנועות בחשבון ← ייצוא ← Excel'},
+              {bank:'בנק לאומי',steps:'לאומי Online ← תנועות ← ייצוא ← Excel'},
+              {bank:'Max',steps:'max.co.il ← עסקאות ← הורד דוח ← Excel'},
+            ].map(b=>(
+              <div key={b.bank} style={{borderBottom:'1px solid #f3f4f6',padding:'8px 0',fontSize:12}}>
+                <span style={{fontWeight:600,color:'#374151'}}>{b.bank}: </span>
+                <span style={{color:'#6B7280'}}>{b.steps}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {stage==='map'&&(
+        <div>
+          <p style={{fontSize:17,fontWeight:700,margin:'0 0 4px'}}>🗂️ מיפוי עמודות</p>
+          <p style={{fontSize:13,color:'#6B7280',marginBottom:16}}>בחר איזו עמודה מכילה כל נתון:</p>
+
+          {/* Preview of first 3 rows */}
+          <div className="card" style={{overflowX:'auto',marginBottom:16}}>
+            <table style={{fontSize:11,borderCollapse:'collapse',width:'100%'}}>
+              <thead>
+                <tr style={{background:'#f9fafb'}}>
+                  {hdrRow.map((h,i)=><th key={i} style={{padding:'6px 8px',borderBottom:'1px solid #e5e7eb',textAlign:'right',whiteSpace:'nowrap',fontWeight:700,color:'#374151'}}>{String(h)}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(1,4).map((r,i)=>(
+                  <tr key={i} style={{borderBottom:'1px solid #f3f4f6'}}>
+                    {r.map((c,j)=><td key={j} style={{padding:'6px 8px',color:'#6B7280',whiteSpace:'nowrap'}}>{String(c).slice(0,20)}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Column selectors */}
+          <div className="card" style={{padding:16,display:'flex',flexDirection:'column',gap:14}}>
+            {[
+              {key:'date',label:'📅 תאריך'},
+              {key:'desc',label:'📝 תיאור עסקה'},
+              {key:'amount',label:'💰 סכום (עמודה אחת)'},
+              {key:'debit',label:'📤 חיוב / הוצאה'},
+              {key:'credit',label:'📥 זכות / הכנסה'},
+            ].map(f=>(
+              <div key={f.key} style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <label style={{fontSize:13,fontWeight:600,color:'#374151'}}>{f.label}</label>
+                <select value={cols[f.key]} onChange={e=>setCols(c=>({...c,[f.key]:parseInt(e.target.value)}))}
+                        style={{border:'1px solid #e5e7eb',borderRadius:8,padding:'6px 10px',fontSize:13,background:'white',minWidth:130}}>
+                  <option value={-1}>— לא רלוונטי</option>
+                  {hdrRow.map((h,i)=><option key={i} value={i}>{String(h)||`עמודה ${i+1}`}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+
+          <div style={{display:'flex',gap:12,marginTop:16}}>
+            <button className="btn-secondary" onClick={()=>setStage('upload')} style={{width:'auto',padding:'14px 20px'}}>← חזור</button>
+            <button className="btn-primary" onClick={buildPreview}
+                    disabled={cols.desc<0||(cols.amount<0&&(cols.debit<0&&cols.credit<0))||cols.date<0}>
+              תצוגה מקדימה →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {stage==='preview'&&(
+        <div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <div>
+              <p style={{fontSize:17,fontWeight:700,margin:0}}>✅ תצוגה מקדימה</p>
+              <p style={{fontSize:13,color:'#6B7280',margin:'2px 0 0'}}>{preview.length} עסקאות זוהו</p>
+            </div>
+            <button className="btn-secondary" onClick={()=>setStage('map')} style={{width:'auto',padding:'8px 14px',fontSize:13}}>← חזור</button>
+          </div>
+
+          <div className="card" style={{overflow:'hidden',marginBottom:16}}>
+            {preview.slice(0,20).map(tx=><TxRow key={tx.id} tx={tx}/>)}
+            {preview.length>20&&<p style={{textAlign:'center',fontSize:12,color:'#9CA3AF',padding:12}}>ועוד {preview.length-20} עסקאות...</p>}
+          </div>
+
+          <button className="btn-primary" onClick={confirmImport}>
+            ייבא {preview.length} עסקאות ←
+          </button>
+        </div>
+      )}
+
+      {stage==='done'&&(
+        <div className="card" style={{padding:40,textAlign:'center'}}>
+          <div style={{fontSize:60,marginBottom:16}}>🎉</div>
+          <p style={{fontSize:20,fontWeight:800,marginBottom:8}}>הייבוא הושלם!</p>
+          <p style={{fontSize:14,color:'#6B7280',marginBottom:24}}>{preview.length} עסקאות יובאו בהצלחה</p>
+          <button className="btn-primary" onClick={()=>setStage('upload')}>ייבא קובץ נוסף</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── INVESTMENTS TAB ── */
+/* ── STOCK PORTFOLIO (buy/sell/liquid) ── */
+const LS_PORTFOLIO = 'fil_portfolio';
+
+function PortfolioSection() {
+  const [holdings, setHoldings] = useState(()=>lsGet(LS_PORTFOLIO,{holdings:[],cash:0}).holdings||[]);
+  const [cash,     setCash]     = useState(()=>lsGet(LS_PORTFOLIO,{holdings:[],cash:0}).cash||0);
+  const [mode,     setMode]     = useState('view'); // view | buy | sell | deposit
+  const [form,     setForm]     = useState({symbol:'',name:'',shares:'',price:'',date:new Date().toISOString().split('T')[0]});
+  const [sellForm, setSellForm] = useState({holdingId:'',shares:'',price:'',date:new Date().toISOString().split('T')[0]});
+  const [depositAmt, setDepositAmt] = useState('');
+  const [subTab,   setSubTab]   = useState('holdings'); // holdings | history
+  const [history,  setHistory]  = useState(()=>lsGet(LS_PORTFOLIO,{}).history||[]);
+
+  function persist(h,c,hist) {
+    lsSet(LS_PORTFOLIO,{holdings:h,cash:c,history:hist||history});
+  }
+
+  function deposit() {
+    const amt=parseFloat(depositAmt); if(isNaN(amt)||amt<=0) return;
+    const newCash=Math.round((cash+amt)*100)/100;
+    const hist=[{id:Date.now(),type:'deposit',amount:amt,date:new Date().toISOString().split('T')[0]},...history];
+    setCash(newCash); setHistory(hist); persist(holdings,newCash,hist);
+    setDepositAmt(''); setMode('view');
+  }
+
+  function buy() {
+    const shares=parseFloat(form.shares), price=parseFloat(form.price);
+    if(!form.symbol||isNaN(shares)||isNaN(price)||shares<=0||price<=0) return;
+    const cost=Math.round(shares*price*100)/100;
+    // find existing holding for same symbol
+    const existing=holdings.find(h=>h.symbol.toUpperCase()===form.symbol.toUpperCase());
+    let newHoldings;
+    if (existing) {
+      // average down/up
+      const totalShares=existing.shares+shares;
+      const avgCost=Math.round(((existing.avgCost*existing.shares)+(price*shares))/totalShares*100)/100;
+      newHoldings=holdings.map(h=>h.id===existing.id?{...h,shares:totalShares,avgCost}:h);
+    } else {
+      newHoldings=[...holdings,{id:Date.now(),symbol:form.symbol.toUpperCase(),
+        name:form.name||form.symbol.toUpperCase(),shares,avgCost:price,color:'#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0')}];
+    }
+    const newCash=Math.round((cash-cost)*100)/100;
+    const hist=[{id:Date.now(),type:'buy',symbol:form.symbol.toUpperCase(),shares,price,cost,date:form.date},...history];
+    setHoldings(newHoldings); setCash(newCash); setHistory(hist);
+    persist(newHoldings,newCash,hist);
+    setForm({symbol:'',name:'',shares:'',price:'',date:new Date().toISOString().split('T')[0]});
+    setMode('view');
+  }
+
+  function sell() {
+    const h=holdings.find(x=>x.id===parseInt(sellForm.holdingId));
+    if(!h) return;
+    const shares=parseFloat(sellForm.shares), price=parseFloat(sellForm.price);
+    if(isNaN(shares)||isNaN(price)||shares<=0||price<=0||shares>h.shares) return;
+    const proceeds=Math.round(shares*price*100)/100;
+    const pl=Math.round((price-h.avgCost)*shares*100)/100;
+    let newHoldings;
+    if(shares===h.shares) newHoldings=holdings.filter(x=>x.id!==h.id);
+    else newHoldings=holdings.map(x=>x.id===h.id?{...x,shares:Math.round((x.shares-shares)*100000)/100000}:x);
+    const newCash=Math.round((cash+proceeds)*100)/100;
+    const hist=[{id:Date.now(),type:'sell',symbol:h.symbol,shares,price,proceeds,pl,date:sellForm.date},...history];
+    setHoldings(newHoldings); setCash(newCash); setHistory(hist);
+    persist(newHoldings,newCash,hist);
+    setSellForm({holdingId:'',shares:'',price:'',date:new Date().toISOString().split('T')[0]});
+    setMode('view');
+  }
+
+  const totalCost = holdings.reduce((s,h)=>s+h.shares*h.avgCost,0);
+  // We don't have live prices here unless user entered current price - show cost basis
+  const donutData = holdings.map(h=>({name:h.symbol,value:Math.round(h.shares*h.avgCost*100)/100,color:h.color,emoji:''}));
+
+  return (
+    <div>
+      {/* Summary card */}
+      <div style={{background:'linear-gradient(135deg,#052e16,#14532d)',padding:'16px 20px',borderRadius:16,marginBottom:16}}>
+        <p style={{color:'rgba(255,255,255,.7)',fontSize:12,margin:'0 0 4px'}}>📊 תיק מניות</p>
+        <p style={{color:'white',fontSize:28,fontWeight:800,margin:'0 0 12px'}}>{fmtILS(totalCost+cash)}</p>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          <div style={{background:'rgba(255,255,255,.12)',borderRadius:10,padding:'10px 12px'}}>
+            <p style={{color:'rgba(255,255,255,.6)',fontSize:11,margin:'0 0 3px'}}>מניות (עלות)</p>
+            <p style={{color:'white',fontSize:16,fontWeight:700,margin:0}}>{fmtILS(totalCost)}</p>
+          </div>
+          <div style={{background:'rgba(255,255,255,.12)',borderRadius:10,padding:'10px 12px'}}>
+            <p style={{color:'rgba(255,255,255,.6)',fontSize:11,margin:'0 0 3px'}}>💵 כסף נזיל</p>
+            <p style={{color:'white',fontSize:16,fontWeight:700,margin:0}}>{fmtILS(cash)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:16}}>
+        {[
+          {id:'deposit',label:'💵 הפקד',    bg:'#eff6ff',color:'#1e40af'},
+          {id:'buy',    label:'🟢 קנייה',   bg:'#f0fdf4',color:'#15803d'},
+          {id:'sell',   label:'🔴 מכירה',   bg:'#fef2f2',color:'#b91c1c'},
+        ].map(a=>(
+          <button key={a.id} onClick={()=>setMode(mode===a.id?'view':a.id)} style={{
+            border:`2px solid ${mode===a.id?a.color:'transparent'}`,
+            background:a.bg,color:a.color,borderRadius:12,padding:'10px 4px',
+            fontSize:13,fontWeight:700,cursor:'pointer'}}>
+            {a.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Deposit panel */}
+      {mode==='deposit'&&(
+        <div className="card" style={{padding:16,marginBottom:16}} >
+          <p style={{fontWeight:700,marginBottom:12}}>💵 הפקד כסף נזיל</p>
+          <div style={{display:'flex',gap:10}}>
+            <input className="input input-num" type="number" placeholder="סכום ₪" value={depositAmt}
+                   onChange={e=>setDepositAmt(e.target.value)} style={{flex:1}} autoFocus/>
+            <button className="btn-primary" onClick={deposit} style={{width:'auto',padding:'13px 18px'}}>הפקד</button>
+            <button className="btn-secondary" onClick={()=>setMode('view')} style={{width:'auto',padding:'13px 14px'}}>ביטול</button>
+          </div>
+        </div>
+      )}
+
+      {/* Buy panel */}
+      {mode==='buy'&&(
+        <div className="card" style={{padding:16,marginBottom:16}}>
+          <p style={{fontWeight:700,marginBottom:12}}>🟢 רכישת נייר ערך</p>
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              <div>
+                <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>סימול (Ticker)</label>
+                <input className="input" style={{textTransform:'uppercase',direction:'ltr'}}
+                       placeholder="NVDA" value={form.symbol}
+                       onChange={e=>setForm(f=>({...f,symbol:e.target.value.toUpperCase()}))}/>
+              </div>
+              <div>
+                <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>שם</label>
+                <input className="input" placeholder="NVIDIA" value={form.name}
+                       onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
+              </div>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              <div>
+                <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>כמות מניות</label>
+                <input className="input input-num" type="number" step="0.001" placeholder="10"
+                       value={form.shares} onChange={e=>setForm(f=>({...f,shares:e.target.value}))}/>
+              </div>
+              <div>
+                <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>מחיר לרכישה</label>
+                <input className="input input-num" type="number" step="0.01" placeholder="875.00"
+                       value={form.price} onChange={e=>setForm(f=>({...f,price:e.target.value}))}/>
+              </div>
+            </div>
+            <div>
+              <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>תאריך</label>
+              <input className="input" type="date" value={form.date} style={{direction:'ltr'}}
+                     onChange={e=>setForm(f=>({...f,date:e.target.value}))}/>
+            </div>
+            {form.shares&&form.price&&(
+              <div style={{background:'#f0fdf4',borderRadius:10,padding:'10px 14px',display:'flex',justifyContent:'space-between'}}>
+                <span style={{fontSize:13,color:'#15803d'}}>עלות כוללת</span>
+                <span style={{fontSize:14,fontWeight:800,color:'#14532d'}}>
+                  {fmtILS(parseFloat(form.shares||0)*parseFloat(form.price||0))}
+                  {cash>0&&parseFloat(form.shares)*parseFloat(form.price)>cash&&
+                    <span style={{color:'#dc2626',fontSize:11,marginRight:8}}>⚠️ חורג מהמזומן</span>}
+                </span>
+              </div>
+            )}
+            <div style={{display:'flex',gap:10}}>
+              <button className="btn-primary" onClick={buy} style={{background:'#15803d'}}>קנה ✓</button>
+              <button className="btn-secondary" onClick={()=>setMode('view')} style={{width:'auto',padding:'13px 14px'}}>ביטול</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sell panel */}
+      {mode==='sell'&&(
+        <div className="card" style={{padding:16,marginBottom:16}}>
+          <p style={{fontWeight:700,marginBottom:12}}>🔴 מכירת נייר ערך</p>
+          {holdings.length===0
+            ? <p style={{color:'#9CA3AF',fontSize:13}}>אין החזקות למכירה</p>
+            : <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                <div>
+                  <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>נייר ערך</label>
+                  <select className="input" value={sellForm.holdingId}
+                          onChange={e=>setSellForm(f=>({...f,holdingId:e.target.value}))}>
+                    <option value="">בחר נייר...</option>
+                    {holdings.map(h=><option key={h.id} value={h.id}>{h.symbol} — {h.shares} יח׳</option>)}
+                  </select>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <div>
+                    <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>כמות למכירה</label>
+                    <input className="input input-num" type="number" step="0.001" placeholder="0"
+                           value={sellForm.shares} onChange={e=>setSellForm(f=>({...f,shares:e.target.value}))}/>
+                  </div>
+                  <div>
+                    <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>מחיר מכירה</label>
+                    <input className="input input-num" type="number" step="0.01" placeholder="0.00"
+                           value={sellForm.price} onChange={e=>setSellForm(f=>({...f,price:e.target.value}))}/>
+                  </div>
+                </div>
+                {sellForm.holdingId&&sellForm.shares&&sellForm.price&&(()=>{
+                  const h=holdings.find(x=>x.id===parseInt(sellForm.holdingId));
+                  const pl=h?Math.round((parseFloat(sellForm.price)-h.avgCost)*parseFloat(sellForm.shares)*100)/100:0;
+                  return <div style={{background:pl>=0?'#f0fdf4':'#fef2f2',borderRadius:10,padding:'10px 14px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
+                      <span style={{color:'#6B7280'}}>תמורה</span>
+                      <span style={{fontWeight:700}}>{fmtILS(parseFloat(sellForm.shares)*parseFloat(sellForm.price))}</span>
+                    </div>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:13,marginTop:4}}>
+                      <span style={{color:'#6B7280'}}>רווח/הפסד</span>
+                      <span style={{fontWeight:700,color:pl>=0?'#15803d':'#dc2626'}}>{pl>=0?'+':''}{fmtILS(pl)}</span>
+                    </div>
+                  </div>;
+                })()}
+                <div>
+                  <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>תאריך</label>
+                  <input className="input" type="date" value={sellForm.date} style={{direction:'ltr'}}
+                         onChange={e=>setSellForm(f=>({...f,date:e.target.value}))}/>
+                </div>
+                <div style={{display:'flex',gap:10}}>
+                  <button className="btn-primary" onClick={sell} style={{background:'#b91c1c'}}>מכור ✓</button>
+                  <button className="btn-secondary" onClick={()=>setMode('view')} style={{width:'auto',padding:'13px 14px'}}>ביטול</button>
+                </div>
+              </div>
+          }
+        </div>
+      )}
+
+      {/* Sub-tabs */}
+      <div style={{display:'flex',background:'#f3f4f6',borderRadius:12,padding:3,gap:3,marginBottom:12}}>
+        {[['holdings','החזקות 📋'],['history','היסטוריה 📜']].map(([v,l])=>(
+          <button key={v} onClick={()=>setSubTab(v)} style={{flex:1,padding:'8px',border:'none',borderRadius:10,
+            fontSize:13,fontWeight:700,cursor:'pointer',background:subTab===v?'white':'transparent',
+            color:subTab===v?'#111':'#9CA3AF',boxShadow:subTab===v?'0 1px 4px rgba(0,0,0,.08)':'none'}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* Holdings list */}
+      {subTab==='holdings'&&(
+        holdings.length===0
+          ? <div className="card" style={{padding:32,textAlign:'center',color:'#9CA3AF',fontSize:14}}>
+              אין החזקות עדיין — לחץ "קנייה" להוסיף נייר ערך
+            </div>
+          : <div className="card" style={{overflow:'hidden'}}>
+              {holdings.map(h=>(
+                <div key={h.id} style={{padding:'14px 16px',borderBottom:'1px solid #f3f4f6',display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{width:40,height:40,borderRadius:10,background:h.color+'22',display:'flex',
+                               alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:13,color:h.color,flexShrink:0}}>
+                    {h.symbol.slice(0,3)}
+                  </div>
+                  <div style={{flex:1}}>
+                    <p style={{margin:0,fontWeight:700,fontSize:14}}>{h.symbol}</p>
+                    <p style={{margin:'2px 0 0',fontSize:11,color:'#9CA3AF'}}>{h.name} · {h.shares} יח׳</p>
+                  </div>
+                  <div style={{textAlign:'left'}}>
+                    <p style={{margin:0,fontWeight:700,fontSize:14}}>{fmtILS(h.shares*h.avgCost)}</p>
+                    <p style={{margin:'2px 0 0',fontSize:11,color:'#9CA3AF'}}>עלות ממוצעת: {h.avgCost.toFixed(2)}</p>
+                  </div>
+                </div>
+              ))}
+              {/* Allocation donut */}
+              {holdings.length>1&&donutData.length>0&&(
+                <div style={{padding:16,borderTop:'1px solid #f3f4f6'}}>
+                  <p style={{fontSize:13,fontWeight:700,marginBottom:8}}>הקצאה</p>
+                  <DonutChart data={donutData} cx_label="תיק" cx_val={fmtILS(totalCost)}/>
+                  <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:8}}>
+                    {donutData.map(d=>(
+                      <div key={d.name} style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
+                        <div style={{display:'flex',alignItems:'center',gap:8}}>
+                          <span style={{width:10,height:10,borderRadius:'50%',background:d.color,display:'inline-block'}}/>
+                          <span style={{color:'#374151'}}>{d.name}</span>
+                        </div>
+                        <span style={{fontWeight:700}}>{fmtILS(d.value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+      )}
+
+      {/* History */}
+      {subTab==='history'&&(
+        history.length===0
+          ? <div className="card" style={{padding:32,textAlign:'center',color:'#9CA3AF',fontSize:14}}>אין היסטוריה</div>
+          : <div className="card" style={{overflow:'hidden'}}>
+              {history.slice(0,30).map(h=>(
+                <div key={h.id} style={{padding:'12px 16px',borderBottom:'1px solid #f3f4f6',display:'flex',alignItems:'center',gap:12}}>
+                  <span style={{fontSize:22,flexShrink:0}}>
+                    {h.type==='buy'?'🟢':h.type==='sell'?'🔴':'💵'}
+                  </span>
+                  <div style={{flex:1}}>
+                    <p style={{margin:0,fontSize:13,fontWeight:700}}>
+                      {h.type==='deposit'?'הפקדת מזומן':`${h.type==='buy'?'קנייה':'מכירה'}: ${h.symbol}`}
+                    </p>
+                    <p style={{margin:'2px 0 0',fontSize:11,color:'#9CA3AF'}}>
+                      {fmtDate(h.date)}{h.shares?` · ${h.shares} יח׳ @ ${h.price}`:''}
+                    </p>
+                  </div>
+                  <div style={{textAlign:'left'}}>
+                    <p style={{margin:0,fontSize:13,fontWeight:700,color:h.type==='sell'?'#15803d':h.type==='buy'?'#dc2626':'#1e40af'}}>
+                      {h.type==='buy'?'-':'+'}
+                      {fmtILS(h.cost||h.proceeds||h.amount)}
+                    </p>
+                    {h.pl!==undefined&&<p style={{margin:'2px 0 0',fontSize:11,color:h.pl>=0?'#15803d':'#dc2626'}}>
+                      רווח: {h.pl>=0?'+':''}{fmtILS(h.pl)}
+                    </p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+      )}
+    </div>
+  );
+}
+
+function InvestmentsTab({profile}) {
+  const [invTab,setInvTab]=useState('keren');
+  const stored=lsGet(LS.INV,{});
+  const gross=profile.grossSalary||0;
+  const kerenMonthly=gross*(profile.kerenEmp+profile.kerenEr)/100;
+  const pensionMonthly=gross*(profile.pensionEmp+profile.pensionEr)/100;
+
+  // Editable card helper
+  function EditableCard({title,emoji,value,setValue,monthly,color,light,tc,hint,lsKey}) {
+    const [editing,setEditing]=useState(false);
+    const [tmp,setTmp]=useState('');
+    function save(){const v=parseFloat(tmp);if(v>=0){setValue(v);lsSet(LS.INV,{...lsGet(LS.INV,{}),[lsKey]:v});}setEditing(false);}
+    return (
+      <div className="card" style={{overflow:'hidden'}}>
+        <div style={{background:`linear-gradient(135deg,${color},${color}cc)`,padding:'16px 20px',
+                     display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{color:'white'}}>
+            <p style={{margin:0,fontSize:16,fontWeight:700}}>{emoji} {title}</p>
+            {monthly>0&&<p style={{margin:'4px 0 0',fontSize:12,opacity:.7}}>הפקדה חודשית: {fmtILS(monthly)}</p>}
+          </div>
+          <div style={{textAlign:'left',color:'white'}}>
+            <p style={{margin:0,fontSize:22,fontWeight:800}}>{value>0?fmtILS(value):'—'}</p>
+            <p style={{margin:'2px 0 0',fontSize:11,opacity:.6}}>שווי נוכחי</p>
+          </div>
+        </div>
+        <div style={{padding:14}}>
+          {editing?(
+            <div style={{display:'flex',gap:10,alignItems:'flex-end'}}>
+              <div style={{flex:1}}>
+                <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>שווי נוכחי ₪</label>
+                <input className="input input-num" type="number" value={tmp}
+                       onChange={e=>setTmp(e.target.value)} placeholder="0" autoFocus/>
+              </div>
+              <button onClick={save} className="btn-primary" style={{width:'auto',padding:'13px 18px'}}>שמור</button>
+              <button onClick={()=>setEditing(false)} className="btn-secondary" style={{width:'auto',padding:'13px 14px'}}>ביטול</button>
+            </div>
+          ):(
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <p style={{fontSize:12,color:'#9CA3AF',margin:0}}>💡 {hint}</p>
+              <button onClick={()=>{setTmp(value||'');setEditing(true);}}
+                      style={{border:'none',background:light,color:tc,borderRadius:8,padding:'7px 14px',fontSize:13,fontWeight:700,cursor:'pointer'}}>
+                ✏️ עדכן
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Per-sub-tab state
+  const [kVal,setKVal]=useState(stored.kerenValue??0);
+  const [pVal,setPVal]=useState(stored.pensionValue??0);
+  const [savingsAccounts,setSavingsAccounts]=useState(()=>lsGet('fil_savings',[]));
+  const [moneyMarket,setMoneyMarket]=useState(()=>lsGet('fil_mm',{value:0,yield:4.5,name:''}));
+  const [savEdit,setSavEdit]=useState(false);
+  const [savForm,setSavForm]=useState({name:'',bank:'',value:'',rate:''});
+  const [mmEdit,setMmEdit]=useState(false);
+  const [mmTmp,setMmTmp]=useState({value:'',yield:'',name:''});
+
+  function addSavings(){
+    const v=parseFloat(savForm.value);
+    if(!savForm.name||isNaN(v)||v<=0) return;
+    const list=[...savingsAccounts,{id:Date.now(),name:savForm.name,bank:savForm.bank,
+      value:v,rate:parseFloat(savForm.rate)||0}];
+    setSavingsAccounts(list); lsSet('fil_savings',list);
+    setSavForm({name:'',bank:'',value:'',rate:''}); setSavEdit(false);
+  }
+  function delSavings(id){const list=savingsAccounts.filter(s=>s.id!==id);setSavingsAccounts(list);lsSet('fil_savings',list);}
+  function saveMM(){
+    const v={value:parseFloat(mmTmp.value)||0,yield:parseFloat(mmTmp.yield)||0,name:mmTmp.name};
+    setMoneyMarket(v); lsSet('fil_mm',v); setMmEdit(false);
+  }
+
+  const INV_TABS=[
+    {id:'keren',    label:'קה"ש', emoji:'📈'},
+    {id:'pension',  label:'פנסיה',emoji:'🏛️'},
+    {id:'savings',  label:'חסכון', emoji:'🏦'},
+    {id:'mm',       label:'ק. כספית',emoji:'💵'},
+    {id:'stocks',   label:'מניות', emoji:'📊'},
+  ];
+
+  return (
+    <div>
+      {/* Sub-tab bar */}
+      <div style={{background:'white',borderBottom:'1px solid #e5e7eb',overflowX:'auto',display:'flex',padding:'0 8px'}}
+           className="scrollbar-hide">
+        {INV_TABS.map(t=>(
+          <button key={t.id} onClick={()=>setInvTab(t.id)} style={{
+            flexShrink:0,padding:'12px 14px',border:'none',background:'none',cursor:'pointer',
+            borderBottom:`2px solid ${invTab===t.id?'#22C55E':'transparent'}`,
+            color:invTab===t.id?'#22C55E':'#9CA3AF',fontSize:13,fontWeight:invTab===t.id?700:500,
+            whiteSpace:'nowrap',transition:'color .15s'}}>
+            {t.emoji} {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{padding:16,display:'flex',flexDirection:'column',gap:14}}>
+
+        {invTab==='keren'&&(
+          profile.hasKeren
+            ? <EditableCard title="קרן השתלמות" emoji="📈" value={kVal} setValue={setKVal}
+                monthly={kerenMonthly} color="#1e3a5f" light="#eff6ff" tc="#1e40af"
+                hint="עדכן מ-gemel.co.il" lsKey="kerenValue"/>
+            : <p style={{color:'#9CA3AF',textAlign:'center',padding:32}}>לא הוגדרה קרן השתלמות</p>
+        )}
+
+        {invTab==='pension'&&(
+          profile.hasPension
+            ? <EditableCard title="פנסיה" emoji="🏛️" value={pVal} setValue={setPVal}
+                monthly={pensionMonthly} color="#4a1942" light="#f5f3ff" tc="#6d28d9"
+                hint="עדכן מ-pension.mof.gov.il" lsKey="pensionValue"/>
+            : <p style={{color:'#9CA3AF',textAlign:'center',padding:32}}>לא הוגדרה פנסיה</p>
+        )}
+
+        {invTab==='savings'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <p style={{margin:0,fontWeight:700,fontSize:15}}>חסכונות בנקאיים</p>
+              <button onClick={()=>setSavEdit(v=>!v)} style={{border:'none',background:'#f0fdf4',color:'#15803d',
+                borderRadius:10,padding:'7px 14px',fontSize:13,fontWeight:700,cursor:'pointer'}}>
+                {savEdit?'ביטול':'+ הוסף'}
+              </button>
+            </div>
+            {savEdit&&(
+              <div className="card" style={{padding:16,display:'flex',flexDirection:'column',gap:10}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <div>
+                    <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>שם החיסכון</label>
+                    <input className="input" placeholder='פק"מ / חסכון' value={savForm.name}
+                           onChange={e=>setSavForm(f=>({...f,name:e.target.value}))}/>
+                  </div>
+                  <div>
+                    <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>בנק</label>
+                    <input className="input" placeholder="הפועלים" value={savForm.bank}
+                           onChange={e=>setSavForm(f=>({...f,bank:e.target.value}))}/>
+                  </div>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <div>
+                    <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>יתרה ₪</label>
+                    <input className="input input-num" type="number" placeholder="0" value={savForm.value}
+                           onChange={e=>setSavForm(f=>({...f,value:e.target.value}))}/>
+                  </div>
+                  <div>
+                    <label style={{fontSize:12,color:'#6B7280',display:'block',marginBottom:4}}>ריבית שנתית %</label>
+                    <input className="input input-num" type="number" step="0.1" placeholder="3.5" value={savForm.rate}
+                           onChange={e=>setSavForm(f=>({...f,rate:e.target.value}))}/>
+                  </div>
+                </div>
+                <button className="btn-primary" onClick={addSavings}>הוסף חיסכון ✓</button>
+              </div>
+            )}
+            {savingsAccounts.length===0&&!savEdit&&(
+              <div className="card" style={{padding:32,textAlign:'center',color:'#9CA3AF',fontSize:14}}>
+                אין חסכונות — לחץ "הוסף"
+              </div>
+            )}
+            {savingsAccounts.map(s=>(
+              <div key={s.id} className="card" style={{padding:16,display:'flex',alignItems:'center',gap:12}}>
+                <span style={{fontSize:28}}>🏦</span>
+                <div style={{flex:1}}>
+                  <p style={{margin:0,fontWeight:700,fontSize:14}}>{s.name}</p>
+                  <p style={{margin:'2px 0 0',fontSize:12,color:'#9CA3AF'}}>{s.bank}{s.rate>0?` · ${s.rate}% שנתי`:''}</p>
+                </div>
+                <div style={{textAlign:'left'}}>
+                  <p style={{margin:0,fontWeight:800,fontSize:16}}>{fmtILS(s.value)}</p>
+                  {s.rate>0&&<p style={{margin:'2px 0 0',fontSize:11,color:'#15803d'}}>+{fmtILS(s.value*s.rate/100)}/שנה</p>}
+                </div>
+                <button onClick={()=>delSavings(s.id)}
+                        style={{border:'none',background:'#fee2e2',color:'#dc2626',borderRadius:8,padding:'6px 10px',cursor:'pointer',fontSize:13}}>✕</button>
+              </div>
+            ))}
+            {savingsAccounts.length>0&&(
+              <div className="card" style={{padding:14,background:'#f0fdf4',border:'1px solid #bbf7d0'}}>
+                <div style={{display:'flex',justifyContent:'space-between'}}>
+                  <span style={{fontSize:14,fontWeight:700,color:'#14532d'}}>סה"כ חסכונות</span>
+                  <span style={{fontSize:16,fontWeight:800,color:'#14532d'}}>{fmtILS(savingsAccounts.reduce((s,a)=>s+a.value,0))}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {invTab==='mm'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            <div className="card" style={{overflow:'hidden'}}>
+              <div style={{background:'linear-gradient(135deg,#064e3b,#065f46)',padding:'16px 20px',
+                           display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div style={{color:'white'}}>
+                  <p style={{margin:0,fontSize:16,fontWeight:700}}>💵 קרן כספית</p>
+                  <p style={{margin:'4px 0 0',fontSize:12,opacity:.7}}>{moneyMarket.name||'לא הוגדר שם'}</p>
+                </div>
+                <div style={{textAlign:'left',color:'white'}}>
+                  <p style={{margin:0,fontSize:22,fontWeight:800}}>{moneyMarket.value>0?fmtILS(moneyMarket.value):'—'}</p>
+                  {moneyMarket.yield>0&&<p style={{margin:'2px 0 0',fontSize:11,opacity:.7}}>תשואה: {moneyMarket.yield}%</p>}
+                </div>
+              </div>
+              <div style={{padding:14}}>
+                {mmEdit?(
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    <input className="input" placeholder='שם הקרן (לדוגמה: "מגדל ש.כ.")' value={mmTmp.name}
+                           onChange={e=>setMmTmp(f=>({...f,name:e.target.value}))}/>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                      <input className="input input-num" type="number" placeholder="שווי ₪" value={mmTmp.value}
+                             onChange={e=>setMmTmp(f=>({...f,value:e.target.value}))}/>
+                      <input className="input input-num" type="number" step="0.1" placeholder="תשואה שנתית %" value={mmTmp.yield}
+                             onChange={e=>setMmTmp(f=>({...f,yield:e.target.value}))}/>
+                    </div>
+                    <div style={{display:'flex',gap:10}}>
+                      <button className="btn-primary" onClick={saveMM}>שמור ✓</button>
+                      <button className="btn-secondary" onClick={()=>setMmEdit(false)} style={{width:'auto',padding:'13px 14px'}}>ביטול</button>
+                    </div>
+                  </div>
+                ):(
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div>
+                      {moneyMarket.value>0&&moneyMarket.yield>0&&(
+                        <p style={{fontSize:12,color:'#15803d',margin:0}}>
+                          📈 הכנסה שנתית משוערת: {fmtILS(moneyMarket.value*moneyMarket.yield/100)}
+                        </p>
+                      )}
+                      <p style={{fontSize:11,color:'#9CA3AF',margin:'4px 0 0'}}>עדכן מהמסמכי הקרן שלך</p>
+                    </div>
+                    <button onClick={()=>{setMmTmp({value:moneyMarket.value||'',yield:moneyMarket.yield||'',name:moneyMarket.name||''});setMmEdit(true);}}
+                            style={{border:'none',background:'#ecfdf5',color:'#064e3b',borderRadius:8,padding:'7px 14px',fontSize:13,fontWeight:700,cursor:'pointer'}}>
+                      ✏️ עדכן
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="card" style={{padding:14,background:'#f0fdf4',border:'1px solid #a7f3d0'}}>
+              <p style={{fontSize:12,color:'#065f46',margin:'0 0 6px',fontWeight:700}}>💡 מה זה קרן כספית?</p>
+              <p style={{fontSize:12,color:'#047857',margin:0,lineHeight:1.6}}>
+                קרן כספית (Money Market Fund) היא אפיק השקעה סולידי בישראל עם נזילות יומית.
+                תשואה ממוצעת: 4-5% שנתי. ניתן לפתוח דרך בתי ההשקעות (מגדל, הראל, אלטשולר שחם וכד׳).
+              </p>
+            </div>
+          </div>
+        )}
+
+        {invTab==='stocks'&&<PortfolioSection/>}
+
+      </div>
+    </div>
+  );
+}
+
+/* ── SETTINGS TAB ── */
+function SettingsTab({profile,onReset,onProfileUpdate}) {
+  const [p,setP]=useState({...profile});
+  const [saved,setSaved]=useState(false);
+  const set=(k,v)=>setP(prev=>({...prev,[k]:v}));
+
+  function save(){
+    lsSet(LS.PROFILE,p);
+    onProfileUpdate(p);
+    setSaved(true);
+    setTimeout(()=>setSaved(false),2000);
+  }
+
+  return (
+    <div style={{padding:16,display:'flex',flexDirection:'column',gap:16}}>
+      <div className="card" style={{padding:20}}>
+        <p style={{fontSize:16,fontWeight:700,marginBottom:16}}>👤 פרופיל</p>
+        <div style={{marginBottom:14}}>
+          <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>שם</label>
+          <input className="input" value={p.name} onChange={e=>set('name',e.target.value)}/>
+        </div>
+        <div style={{marginBottom:14}}>
+          <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>שכר נטו ₪</label>
+          <input className="input input-num" type="number" value={p.netSalary} onChange={e=>set('netSalary',parseFloat(e.target.value)||0)}/>
+        </div>
+        <div style={{marginBottom:14}}>
+          <label style={{display:'block',fontSize:13,fontWeight:600,color:'#374151',marginBottom:6}}>שכר ברוטו ₪</label>
+          <input className="input input-num" type="number" value={p.grossSalary} onChange={e=>set('grossSalary',parseFloat(e.target.value)||0)}/>
+        </div>
+        <button className="btn-primary" onClick={save}>
+          {saved?'✓ נשמר!':'שמור שינויים'}
+        </button>
+      </div>
+
+      <div className="card" style={{padding:20,borderColor:'#fee2e2'}}>
+        <p style={{fontSize:15,fontWeight:700,color:'#dc2626',marginBottom:8}}>⚠️ איפוס נתונים</p>
+        <p style={{fontSize:13,color:'#6B7280',marginBottom:16}}>ימחק את כל העסקאות וההגדרות ויחזיר לאפס</p>
+        <button onClick={()=>{if(confirm('האם אתה בטוח? לא ניתן לשחזר את הנתונים.'))onReset();}}
+                style={{border:'2px solid #dc2626',background:'white',color:'#dc2626',borderRadius:12,
+                        padding:'12px',fontSize:14,fontWeight:700,cursor:'pointer',width:'100%'}}>
+          🗑️ מחק הכל והתחל מחדש
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── BOTTOM NAV ── */
+function BottomNav({tab,setTab}) {
+  const tabs=[
+    {id:'dashboard',  label:'בית',     emoji:'🏠'},
+    {id:'transactions',label:'עסקאות', emoji:'💳'},
+    {id:'import',     label:'ייבוא',   emoji:'📥'},
+    {id:'investments',label:'השקעות',  emoji:'💹'},
+    {id:'settings',   label:'הגדרות',  emoji:'⚙️'},
+  ];
+  return (
+    <nav className="bottom-nav" style={{
+      position:'fixed',bottom:0,left:0,right:0,background:'white',
+      borderTop:'1px solid #e5e7eb',display:'flex',zIndex:50,
+      boxShadow:'0 -2px 16px rgba(0,0,0,.06)'}}>
+      {tabs.map(t=>(
+        <button key={t.id} onClick={()=>setTab(t.id)} style={{
+          flex:1,padding:'10px 2px 8px',border:'none',background:'none',cursor:'pointer',
+          display:'flex',flexDirection:'column',alignItems:'center',gap:2,
+          color:tab===t.id?'#22C55E':'#9CA3AF',transition:'color .15s'}}>
+          <span style={{fontSize:22,lineHeight:1}}>{t.emoji}</span>
+          <span style={{fontSize:10,fontWeight:tab===t.id?700:500}}>{t.label}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/* ── APP ROOT ── */
+function App() {
+  const [done,setDone]       = useState(()=>lsGet(LS.DONE,false));
+  const [profile,setProfile] = useState(()=>lsGet(LS.PROFILE,null));
+  const [txs,setTxs]         = useState(()=>lsGet(LS.TX,[]));
+  const [tab,setTab]         = useState('dashboard');
+
+  useEffect(()=>{ lsSet(LS.TX,txs); },[txs]);
+
+  function handleAdd(tx)  { setTxs(p=>[tx,...p]); }
+  function handleImport(newTxs) { setTxs(p=>[...newTxs,...p]); }
+  function handleReset()  { lsClear(); setDone(false); setProfile(null); setTxs([]); }
+
+  if (!done||!profile) {
+    return <Onboarding onDone={p=>{setProfile(p);setDone(true);}}/>;
+  }
+
+  return (
+    <div style={{maxWidth:500,margin:'0 auto',minHeight:'100vh',background:'#f0f4f8'}}>
+      {/* Page title bar */}
+      <div style={{background:'white',borderBottom:'1px solid #e5e7eb',padding:'14px 20px',
+                   position:'sticky',top:0,zIndex:30}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:22}}>💎</span>
+          <div>
+            <p style={{margin:0,fontSize:15,fontWeight:800,lineHeight:1}}>FinanceIL</p>
+            <p style={{margin:0,fontSize:11,color:'#9CA3AF'}}>
+              {new Intl.DateTimeFormat('he-IL',{month:'long',year:'numeric'}).format(new Date())}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="main-content">
+        {tab==='dashboard'   && <Dashboard     profile={profile} txs={txs} onAdd={handleAdd}/>}
+        {tab==='transactions'&& <TransactionsTab txs={txs} onAdd={handleAdd}/>}
+        {tab==='import'      && <ImportTab      onImport={handleImport}/>}
+        {tab==='investments' && <InvestmentsTab profile={profile}/>}
+        {tab==='settings'    && <SettingsTab    profile={profile} onReset={handleReset} onProfileUpdate={p=>{setProfile(p);lsSet(LS.PROFILE,p);}}/>}
+      </div>
+
+      <BottomNav tab={tab} setTab={setTab}/>
+    </div>
+  );
+}
+
+document.getElementById('loading')&&(document.getElementById('loading').style.display='none');
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
